@@ -147,18 +147,6 @@ intersection_before_entry(Direction origin, Direction destination)
 		queueSize += 100;
 	}
 	q_addtail(vehicleQueue, currentDir);
-
-
-
-
-
-	if (origin == north) kprintf("North in\n");
-	else if (origin == south) kprintf("South in\n");
-	else if (origin == west) kprintf("West in\n");
-	else if (origin == east) kprintf("East in\n");
-
-
-
 	if (currentOriginGo != origin){
 		if (origin == north){
 			cv_wait(NGo, intersectionLock);
@@ -172,13 +160,6 @@ intersection_before_entry(Direction origin, Direction destination)
 	}
 
 	lock_release(intersectionLock);
-
-
-
-
-
-
-
 }
 
 
@@ -226,22 +207,17 @@ intersection_after_exit(Direction origin, Direction destination)
 	vehicleQueue = newQueue;
 
 	if(!q_empty(vehicleQueue) && sameCount == 0){
-		kprintf("sameCount = 0");
 		Direction newGo = *((Direction *) q_peek(vehicleQueue));
-		if (newGo == north){
-			cv_signal(NGo, intersectionLock);
-		}else if (newGo == south){
-			cv_signal(SGo, intersectionLock);
-		}else if (newGo == east){
-			cv_signal(EGo, intersectionLock);
-		}else if (newGo == west){
-			cv_signal(WGo, intersectionLock);
+		currentOriginGo = newGo;	
+		if (currentOriginGo == north){
+			cv_broadcast(NGo, intersectionLock);
+		}else if (currentOriginGo == south){
+			cv_broadcast(SGo, intersectionLock);
+		}else if (currentOriginGo == east){
+			cv_broadcast(EGo, intersectionLock);
+		}else if (currentOriginGo == west){
+			cv_broadcast(WGo, intersectionLock);
 		}
-		currentOriginGo = newGo;
 	}
 	lock_release(intersectionLock);
-	if (origin == north) kprintf("North out\n");
-	else if (origin == south) kprintf("South out\n");
-	else if (origin == west) kprintf("West out\n");
-	else if (origin == east) kprintf("East out\n");
 }

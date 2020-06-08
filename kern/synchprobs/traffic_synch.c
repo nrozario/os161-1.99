@@ -3,6 +3,7 @@
 #include <synchprobs.h>
 #include <synch.h>
 #include <opt-A1.h>
+#include <queue.h>
 
 /* 
  * This simple default synchronization mechanism allows only vehicle at a time
@@ -22,8 +23,11 @@
  * replace this with declarations of any synchronization and other variables you need here
  */
 static struct semaphore *intersectionSem;
-
-
+Direction volatile currentOriginGo;
+struct cv *NGo, *SGo, *EGo, *WGo;
+struct queue *vehicleQueue;
+struct lock *intersectionLock;
+int volatile queueSize;
 /* 
  * The simulation driver will call this function once before starting
  * the simulation
@@ -31,16 +35,46 @@ static struct semaphore *intersectionSem;
  * You can use it to initialize synchronization and other variables.
  * 
  */
-void
+	void
 intersection_sync_init(void)
 {
-  /* replace this default implementation with your own implementation */
+	/* replace this default implementation with your own implementation */
 
-  intersectionSem = sem_create("intersectionSem",1);
-  if (intersectionSem == NULL) {
-    panic("could not create intersection semaphore");
-  }
-  return;
+	intersectionSem = sem_create("intersectionSem",1);
+	if (intersectionSem == NULL) {
+		panic("could not create intersection semaphore");
+	}
+	intersectionLock = lock_create("intersectionLock");
+	if (intersectionLock == NULL){
+		panic("could not create intersection lock");
+	}
+
+	NGo = cv_create("NGo"); 
+	if (NGo == NULL){
+		panic("could not create NGo cv");
+	}
+
+	SGo = cv_create("SGo");
+	if (SGo == NULL){
+		panic("could not create SGo cv");
+	}
+
+	EGo = cv_create("EGo");
+	if (EGo == NULL){
+		panic("could not create EGo cv");
+	}
+
+	WGo = cv_create("WGo");
+	if (WGo == NULL){
+		panic("could not create WGo cv");
+	}
+
+	vehicleQueue = q_create(100);
+	if (vehicleQueue == NULL){
+		panic("could not create vehicle queue");
+	}
+	queueSize = 100;
+	return;
 }
 
 /* 
@@ -50,12 +84,28 @@ intersection_sync_init(void)
  * You can use it to clean up any synchronization and other variables.
  *
  */
-void
+	void
 intersection_sync_cleanup(void)
 {
-  /* replace this default implementation with your own implementation */
-  KASSERT(intersectionSem != NULL);
-  sem_destroy(intersectionSem);
+	/* replace this default implementation with your own implementation */
+	KASSERT(intersectionSem != NULL);
+	KASSERT(intersectionLock != NULL);
+	KASSERT(vehicleQueue != NULL);
+	KASSERT(NGo != NULL);
+	KASSERT(SGo != NULL);
+	KASSERT(EGo != NULL);
+	KASSERT(WGo != NULL);
+
+
+	sem_destroy(intersectionSem);
+	q_destroy(vehicleQueue);
+	lock_destroy(intersectionLock);
+	cv_destroy(NGo);
+	cv_destroy(SGo);
+	cv_destroy(EGo);
+	cv_destroy(WGo);
+
+
 }
 
 
@@ -72,14 +122,63 @@ intersection_sync_cleanup(void)
  * return value: none
  */
 
-void
+	void
 intersection_before_entry(Direction origin, Direction destination) 
 {
-  /* replace this default implementation with your own implementation */
-  (void)origin;  /* avoid compiler complaint about unused parameter */
-  (void)destination; /* avoid compiler complaint about unused parameter */
-  KASSERT(intersectionSem != NULL);
-  P(intersectionSem);
+	/* replace this default implementation with your own implementation */
+	(void)destination; /* avoid compiler complaint about unused parameter */
+
+	KASSERT(intersectionSem != NULL);
+	KASSERT(vehicleQueue != NULL);
+	KASSERT(intersectionLock != NULL);
+	KASSERT(NGo != NULL);
+	KASSERT(SGo != NULL);
+	KASSERT(EGo != NULL);
+	KASSERT(WGo != NULL);
+
+	lock_acquire(intersectionLock);
+	if (q_empty(vehicleQueue)){     
+		currentOriginGo = origin;     
+	}
+	Direction *currentDir = (Direction *) kmalloc(sizeof(Direction));
+	*currentDir = origin;
+	if (q_len(vehicleQueue) >= queueSize){
+		q_preallocate(vehicleQueue, 100);
+		queueSize += 100;
+	}
+	q_addtail(vehicleQueue, currentDir);
+
+
+
+
+
+	if (origin == north) kprintf("North in\n");
+	else if (origin == south) kprintf("South in\n");
+	else if (origin == west) kprintf("West in\n");
+	else if (origin == east) kprintf("East in\n");
+
+
+
+	if (currentOriginGo != origin){
+		if (origin == north){
+			cv_wait(NGo, intersectionLock);
+		}else if (origin == south){
+			cv_wait(SGo, intersectionLock);
+		}else if (origin == east){
+			cv_wait(EGo, intersectionLock);
+		}else if (origin == west){
+			cv_wait(WGo, intersectionLock);
+		}
+	}
+
+	lock_release(intersectionLock);
+
+
+
+
+
+
+
 }
 
 
@@ -94,12 +193,55 @@ intersection_before_entry(Direction origin, Direction destination)
  * return value: none
  */
 
-void
+	void
 intersection_after_exit(Direction origin, Direction destination) 
 {
-  /* replace this default implementation with your own implementation */
-  (void)origin;  /* avoid compiler complaint about unused parameter */
-  (void)destination; /* avoid compiler complaint about unused parameter */
-  KASSERT(intersectionSem != NULL);
-  V(intersectionSem);
+	/* replace this default implementation with your own implementation */
+	(void)destination; /* avoid compiler complaint about unused parameter */
+	KASSERT(intersectionSem != NULL);
+	KASSERT(vehicleQueue != NULL);
+	KASSERT(NGo != NULL);
+	KASSERT(SGo != NULL);
+	KASSERT(EGo != NULL);
+	KASSERT(WGo != NULL);
+
+	lock_acquire(intersectionLock);
+
+	bool found = false;
+	int sameCount = 0;
+	struct queue *newQueue = q_create(queueSize);
+
+	while(!q_empty(vehicleQueue)){
+		if(!found && *((Direction *) q_peek(vehicleQueue)) == origin){
+			kfree(q_remhead(vehicleQueue));
+			found = true;
+		}else{
+			if (*((Direction *) q_peek(vehicleQueue)) == origin){
+				sameCount++;
+			}
+			q_addtail(newQueue, q_remhead(vehicleQueue));
+		}
+	}		
+	q_destroy(vehicleQueue);
+	vehicleQueue = newQueue;
+
+	if(!q_empty(vehicleQueue) && sameCount == 0){
+		kprintf("sameCount = 0");
+		Direction newGo = *((Direction *) q_peek(vehicleQueue));
+		if (newGo == north){
+			cv_signal(NGo, intersectionLock);
+		}else if (newGo == south){
+			cv_signal(SGo, intersectionLock);
+		}else if (newGo == east){
+			cv_signal(EGo, intersectionLock);
+		}else if (newGo == west){
+			cv_signal(WGo, intersectionLock);
+		}
+		currentOriginGo = newGo;
+	}
+	lock_release(intersectionLock);
+	if (origin == north) kprintf("North out\n");
+	else if (origin == south) kprintf("South out\n");
+	else if (origin == west) kprintf("West out\n");
+	else if (origin == east) kprintf("East out\n");
 }

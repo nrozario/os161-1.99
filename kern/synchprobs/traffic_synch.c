@@ -22,7 +22,6 @@
 /*
  * replace this with declarations of any synchronization and other variables you need here
  */
-static struct semaphore *intersectionSem;
 Direction volatile currentOriginGo;
 struct cv *NGo, *SGo, *EGo, *WGo;
 struct queue *vehicleQueue;
@@ -38,12 +37,6 @@ int volatile queueSize;
 	void
 intersection_sync_init(void)
 {
-	/* replace this default implementation with your own implementation */
-
-	intersectionSem = sem_create("intersectionSem",1);
-	if (intersectionSem == NULL) {
-		panic("could not create intersection semaphore");
-	}
 	intersectionLock = lock_create("intersectionLock");
 	if (intersectionLock == NULL){
 		panic("could not create intersection lock");
@@ -87,8 +80,6 @@ intersection_sync_init(void)
 	void
 intersection_sync_cleanup(void)
 {
-	/* replace this default implementation with your own implementation */
-	KASSERT(intersectionSem != NULL);
 	KASSERT(intersectionLock != NULL);
 	KASSERT(vehicleQueue != NULL);
 	KASSERT(NGo != NULL);
@@ -96,16 +87,12 @@ intersection_sync_cleanup(void)
 	KASSERT(EGo != NULL);
 	KASSERT(WGo != NULL);
 
-
-	sem_destroy(intersectionSem);
 	q_destroy(vehicleQueue);
 	lock_destroy(intersectionLock);
 	cv_destroy(NGo);
 	cv_destroy(SGo);
 	cv_destroy(EGo);
 	cv_destroy(WGo);
-
-
 }
 
 
@@ -125,10 +112,7 @@ intersection_sync_cleanup(void)
 	void
 intersection_before_entry(Direction origin, Direction destination) 
 {
-	/* replace this default implementation with your own implementation */
 	(void)destination; /* avoid compiler complaint about unused parameter */
-
-	KASSERT(intersectionSem != NULL);
 	KASSERT(vehicleQueue != NULL);
 	KASSERT(intersectionLock != NULL);
 	KASSERT(NGo != NULL);
@@ -158,7 +142,6 @@ intersection_before_entry(Direction origin, Direction destination)
 			cv_wait(WGo, intersectionLock);
 		}
 	}
-
 	lock_release(intersectionLock);
 }
 
@@ -179,7 +162,6 @@ intersection_after_exit(Direction origin, Direction destination)
 {
 	/* replace this default implementation with your own implementation */
 	(void)destination; /* avoid compiler complaint about unused parameter */
-	KASSERT(intersectionSem != NULL);
 	KASSERT(vehicleQueue != NULL);
 	KASSERT(NGo != NULL);
 	KASSERT(SGo != NULL);
@@ -187,7 +169,6 @@ intersection_after_exit(Direction origin, Direction destination)
 	KASSERT(WGo != NULL);
 
 	lock_acquire(intersectionLock);
-
 	bool found = false;
 	int sameCount = 0;
 	struct queue *newQueue = q_create(queueSize);

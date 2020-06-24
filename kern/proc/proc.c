@@ -105,6 +105,7 @@ proc_create(const char *name)
 #endif // UW
 #if OPT_A2
 	proc->pid = (pid_t)((size_t)(proc)>>2);
+	KASSERT(proc->pid > 0);
 	proc->parent = NULL;
 	proc->children = array_create();
 	array_init(proc->children);
@@ -169,6 +170,7 @@ proc_destroy(struct proc *proc)
 	}
 #endif // UW
 #if OPT_A2
+	proc->parent = NULL;
 	array_setsize(proc->children, 0);
 	array_destroy(proc->children);
 #endif

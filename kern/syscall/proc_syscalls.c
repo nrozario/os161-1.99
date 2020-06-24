@@ -109,7 +109,7 @@ pid_t sys_fork(struct trapframe *tf, pid_t *retval){
 	
 	KASSERT(parentAS != NULL);
 	int exitstatus = as_copy(parentAS, &childAS);
-	if (!exitstatus){
+	if (exitstatus){
 		return (exitstatus);
 	}	
 
@@ -121,9 +121,13 @@ pid_t sys_fork(struct trapframe *tf, pid_t *retval){
 	spinlock_acquire(&curproc->p_lock);
 	array_add(curproc->children, child, NULL);
 	spinlock_release(&curproc->p_lock);
-
-	thread_fork("name", child, enter_forked_process, tf, 0);
+	
 	*retval = child->pid;
+	
+	exitstatus = thread_fork(curthread->t_name, child, enter_forked_process, tf, 0);
+	if (!exitstatus){
+		return (exitstatus);
+	}
 	return (0);
 }
 #endif

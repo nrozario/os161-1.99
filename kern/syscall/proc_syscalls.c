@@ -97,15 +97,22 @@ sys_waitpid(pid_t pid,
 pid_t sys_fork(struct trapframe *tf, pid_t *retval){
 	KASSERT(tf != NULL);
 	KASSERT(retval != NULL);
+	KASSERT(curproc != NULL);
 
 	struct proc *child = proc_create_runprogram(curproc->p_name);
 	if(child == NULL){
 		return (ENOMEM);
 	}
-	struct addrspace *childAS;
-	if (as_copy(curproc_getas(), &childAS) == NULL){
-		return (ENOMEM);
+
+	struct addrspace *childAS = NULL;
+	struct addrspace *parentAS = curproc_getas();
+	
+	KASSERT(parentAS != NULL);
+	int exitstatus = as_copy(parentAS, &childAS);
+	if (!exitstatus){
+		return (exitstatus);
 	}	
+
 	spinlock_acquire(&child->p_lock);
 	child->p_addrspace = childAS;
 	child->parent = curproc;

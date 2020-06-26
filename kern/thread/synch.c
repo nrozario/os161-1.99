@@ -290,10 +290,12 @@ cv_signal(struct cv *cv, struct lock *lock)
 {
 	KASSERT(cv != NULL);
 	KASSERT(lock != NULL);
-	KASSERT(lock == cv->cv_lock);
 	KASSERT(lock_do_i_hold(lock));
 
-	wchan_wakeone(cv->cv_wchan);
+	if (lock == cv->cv_lock){
+		wchan_wakeone(cv->cv_wchan);
+	}
+
 }
 
 	void

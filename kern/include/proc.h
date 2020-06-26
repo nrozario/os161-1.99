@@ -37,6 +37,7 @@
  */
 
 #include <synch.h>
+#include <spinlock.h>
 #include <thread.h> /* required for struct threadarray */
 #include <array.h>
 #include "opt-A2.h"
@@ -52,16 +53,16 @@ struct semaphore;
  */
 struct proc {
 #if OPT_A2
+	struct lock *info_lock;
 	pid_t pid;
 	struct proc *parent;
 	struct cv *parentSignal;
 	struct array *children;
-	struct array *childrenWait;
 	bool volatile exited;
 	int exitstatus;
 #endif // OPT_A2
 	char *p_name;			/* Name of this process */
-	struct lock *p_lock;		/* Lock for this structure */
+	struct spinlock p_lock;		/* Lock for this structure */
 	struct threadarray p_threads;	/* Threads in this process */
 
 	/* VM */

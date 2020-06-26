@@ -15,47 +15,10 @@
 /* this needs to be fixed to get exit() and waitpid() working properly */
 
 void sys__exit(int exitcode) {
-
 	struct addrspace *as;
 	struct proc *p = curproc;
-#if OPT_A2
-	DEBUG(DB_SYSCALL,"Syscall: _exit(%d)\n",exitcode);
-	KASSERT(curproc->p_addrspace != NULL);
-
-	as_deactivate();
-	as = curproc_setas(NULL);
-	as_destroy(as);
-
-	proc_remthread(curthread);
-	proc_destroy(p);
-	thread_exit();
-
-	lock_acquire(curproc->p_lock);
-	// delete all children that have already exited
-	unsigned i = 0;
-	while(i < array_num(curproc->children)){
-		if (((struct proc *)(array_get(curproc->children, i)))->exited){
-			proc_destroy((struct proc *)(array_get(curproc->children, i)));
-			array_remove(curproc->children, i);
-		}else{
-			i++;
-		}
-	}
-
-	if (curproc->parent == NULL){ // parent has already exited --> full deletion
-		proc_destroy(curproc);
-	}else{
-		curproc->exited = true;
-		curproc->exitstatus = _MKWAIT_EXIT(exitcode);
-		cv_signal(curproc->parentSignal, curproc->p_lock); // signal to parent that child has exited
-	}
-
-	lock_release(curproc->p_lock);
-
-#else
 	/* for now, just include this to keep the compiler from complaining about
 	   an unused variable */
-	(void)exitcode;
 
 	DEBUG(DB_SYSCALL,"Syscall: _exit(%d)\n",exitcode);
 
@@ -70,7 +33,36 @@ void sys__exit(int exitcode) {
 	 */
 	as = curproc_setas(NULL);
 	as_destroy(as);
+	
+#if OPT_A2
 
+	bool destroy = false;
+	lock_acquire(curproc->info_lock);	
+	
+	// delete children that have already exited
+	unsigned i = 0;
+	while(i < array_num(curproc->children)){
+		if (((struct proc *)(array_get(curproc->children, i)))->exited){
+			proc_destroy((struct proc *)(array_get(curproc->children, i)));
+			array_remove(curproc->children, i);
+		}else{
+			i++;
+		}
+	}
+
+	if (curproc->parent == NULL){
+		destroy = true;
+	}else{
+		curproc->exited = true;
+		curproc->exitstatus = _MKWAIT_EXIT(exitcode);
+		cv_signal(curproc->parentSignal, curproc->info_lock); // signal to parent that child has exited
+	}
+
+	lock_release(curproc->info_lock);	
+	proc_remthread(curthread);
+	if (destroy) proc_destroy(p);
+#else
+	(void)exitcode;
 	/* detach this thread from its process */
 	/* note: curproc cannot be used after this call */
 	proc_remthread(curthread);
@@ -78,11 +70,10 @@ void sys__exit(int exitcode) {
 	/* if this is the last user process in the system, proc_destroy()
 	   will wake up the kernel menu thread */
 	proc_destroy(p);
-
+#endif
 	thread_exit();
 	/* thread_exit() does not return, so we should never get here */
 	panic("return from thread_exit in sys_exit\n");
-#endif
 }
 
 
@@ -92,9 +83,9 @@ sys_getpid(pid_t *retval)
 {
 #if OPT_A2
 	struct proc *current = curproc;
-	lock_acquire(current->p_lock);
+	lock_acquire(current->info_lock);
 	*retval = current->pid;
-	lock_release(current->p_lock);
+	lock_release(current->info_lock);
 #else
 	/* for now, this is just a stub that always returns a PID of 1 */
 	/* you need to fix this to make it work properly */
@@ -114,68 +105,51 @@ sys_waitpid(pid_t pid,
 	int exitstatus;
 	int result;
 
-#if OPT_A2
-	int toReturn = 0;
-	int i = 0; // index of child in parent's array of children
-	lock_acquire(curproc->p_lock);
-	for (unsigned j = 0; j < array_num(curproc->children); j++){
-		struct proc *child = (struct proc *)(array_get(curproc->children, j));
-		lock_acquire(child->p_lock);
-		if (child->pid == pid){
-			i = j;
-			if (!child->exited){
-				cv_wait((struct cv*)(array_get(curproc->childrenWait, i)), child->p_lock);
-			}
-			exitstatus = child->exitstatus;       
-			result = copyout((void *)&exitstatus,status,sizeof(int));
-			if (result) {
-				return(result);
-			}
-			*retval = pid;
-
-			// kill any connections between child and grandchildren
-			for (unsigned k = 0; k < array_num(child->children); k++){
-				((struct proc *)(array_get(child->children, k)))->parent = NULL;
-				((struct proc *)(array_get(child->children, k)))->parentSignal = NULL;
-			}
-			array_setsize(child->children, 0);
-			array_destroy(child->children);
-
-			// remove child from parent's array
-			array_remove(curproc->childrenWait, i);
-			array_remove(curproc->children, i);
-			proc_destroy(child);
-			break;
-		}
-		lock_release(child->p_lock);
-	}
-	toReturn = -1; // no child of that pid exists
-	lock_release(curproc->p_lock);
-	if (options != 0) {
-		return(EINVAL);
-	}
-	return (toReturn);
-#else
 	/* this is just a stub implementation that always reports an
 	   exit status of 0, regardless of the actual exit status of
-	   the specified process.   
+	   the specified process.
 	   In fact, this will return 0 even if the specified process
 	   is still running, and even if it never existed in the first place.
-
 	   Fix this!
 	   */
+
 	if (options != 0) {
 		return(EINVAL);
 	}
 	/* for now, just pretend the exitstatus is 0 */
+#if OPT_A2
+	exitstatus = -1;
+	lock_acquire(curproc->info_lock);
+	unsigned n = array_num(curproc->children);
+	for (unsigned i = 0; i < n; i++){
+		struct proc *child = (struct proc *)(array_get(curproc->children, i));
+		lock_acquire(child->info_lock);
+		if(child->pid == pid){
+			if (!child->exited){
+				cv_wait(child->parentSignal, child->info_lock);
+			}
+			exitstatus = child->exitstatus;
+
+			// delete child
+			proc_destroy(child);
+			array_remove(curproc->children, i);
+			
+
+			lock_release(child->info_lock);
+			break;
+		}
+		lock_release(child->info_lock);
+	}
+	lock_release(curproc->info_lock);
+#else
 	exitstatus = 0;
+#endif
 	result = copyout((void *)&exitstatus,status,sizeof(int));
 	if (result) {
 		return(result);
 	}
 	*retval = pid;
 	return(0);
-#endif
 }
 
 #if OPT_A2
@@ -200,16 +174,18 @@ pid_t sys_fork(struct trapframe *tf, pid_t *retval){
 
 	struct cv *wait = cv_create(curproc->p_name);
 
-	lock_acquire(child->p_lock);
+	spinlock_acquire(&child->p_lock);
 	child->p_addrspace = childAS;
+	spinlock_release(&child->p_lock);
+
+	lock_acquire(child->info_lock);
 	child->parent = curproc;
 	child->parentSignal = wait;
-	lock_release(child->p_lock);
+	lock_release(child->info_lock);
 
-	lock_acquire(curproc->p_lock);
+	lock_acquire(curproc->info_lock);
 	array_add(curproc->children, child, NULL);
-	array_add(curproc->childrenWait, wait, NULL);
-	lock_release(curproc->p_lock);
+	lock_release(curproc->info_lock);
 
 	*retval = child->pid;
 

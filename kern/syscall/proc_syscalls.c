@@ -131,11 +131,9 @@ sys_waitpid(pid_t pid,
 			exitstatus = child->exitstatus;
 
 			// delete child
+			lock_release(child->info_lock);
 			proc_destroy(child);
 			array_remove(curproc->children, i);
-			
-
-			lock_release(child->info_lock);
 			break;
 		}
 		lock_release(child->info_lock);

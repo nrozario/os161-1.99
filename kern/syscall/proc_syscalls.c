@@ -33,12 +33,12 @@ void sys__exit(int exitcode) {
 	 */
 	as = curproc_setas(NULL);
 	as_destroy(as);
-	
+
 #if OPT_A2
 
 	bool destroy = false;
 	lock_acquire(curproc->info_lock);	
-	
+
 	// delete children that have already exited
 	unsigned i = 0;
 	while(i < array_num(curproc->children)){
@@ -116,9 +116,8 @@ sys_waitpid(pid_t pid,
 	if (options != 0) {
 		return(EINVAL);
 	}
-	/* for now, just pretend the exitstatus is 0 */
 #if OPT_A2
-	exitstatus = -1;
+	exitstatus = ECHILD;
 	lock_acquire(curproc->info_lock);
 	unsigned n = array_num(curproc->children);
 	for (unsigned i = 0; i < n; i++){
@@ -140,6 +139,7 @@ sys_waitpid(pid_t pid,
 	}
 	lock_release(curproc->info_lock);
 #else
+	/* for now, just pretend the exitstatus is 0 */
 	exitstatus = 0;
 #endif
 	result = copyout((void *)&exitstatus,status,sizeof(int));

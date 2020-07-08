@@ -35,7 +35,7 @@
 #include <thread.h>
 #include <current.h>
 #include <syscall.h>
-
+#include "opt-A2.h"
 
 /*
  * System call dispatcher.
@@ -81,7 +81,6 @@ syscall(struct trapframe *tf)
 	int callno;
 	int32_t retval;
 	int err;
-
 	KASSERT(curthread != NULL);
 	KASSERT(curthread->t_curspl == 0);
 	KASSERT(curthread->t_iplhigh_count == 0);
@@ -129,9 +128,17 @@ syscall(struct trapframe *tf)
 			    (int)tf->tf_a2,
 			    (pid_t *)&retval);
 	  break;
+#if OPT_A2
+        case SYS_fork:
+	  {
+		KASSERT(tf != NULL);
+		  struct trapframe *childTF = (struct trapframe *)kmalloc(sizeof(struct trapframe));
+		  memcpy(childTF, tf, sizeof(struct trapframe));
+		  err = sys_fork(childTF, (pid_t *)&retval);
+		  break;
+	  }
+#endif // OPT_A2
 #endif // UW
-
-	    /* Add stuff here */
  
 	default:
 	  kprintf("Unknown syscall %d\n", callno);
@@ -177,7 +184,14 @@ syscall(struct trapframe *tf)
  * Thus, you can trash it and do things another way if you prefer.
  */
 void
-enter_forked_process(struct trapframe *tf)
+enter_forked_process(void *tf, unsigned long i)
 {
-	(void)tf;
+	KASSERT(tf != NULL);
+	(void)i;
+
+	struct trapframe tf_c = *((struct trapframe *)tf);
+	tf_c.tf_v0 = 0;
+	tf_c.tf_a3 = 0;
+	tf_c.tf_epc += 4;
+	mips_usermode(&tf_c);
 }

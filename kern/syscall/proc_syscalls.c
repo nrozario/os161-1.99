@@ -48,6 +48,7 @@ void sys__exit(int exitcode) {
 			proc_destroy((struct proc *)(array_get(curproc->children, i)));
 			array_remove(curproc->children, i);
 		}else{
+			((struct proc *)(array_get(curproc->children, i)))->parent = NULL;
 			i++;
 		}
 	}

@@ -9,6 +9,8 @@
 #include <thread.h>
 #include <addrspace.h>
 #include <copyinout.h>
+#include <vfs.h>
+#include <kern/fcntl.h>
 #include "opt-A2.h"
 
 /* this implementation of sys__exit does not do anything with the exit code */
@@ -193,4 +195,92 @@ pid_t sys_fork(struct trapframe *tf, pid_t *retval){
 	}
 	return (0);
 }
+#endif
+
+
+#if OPT_A2
+int sys_execv(const char *progname, char**args){
+  struct addrspace *as;
+        struct vnode *v;
+        vaddr_t entrypoint, stackptr;
+        int result;
+
+	size_t len = 0;
+    
+	// copy program path
+	char *kernelProgram = (char *)(kmalloc(sizeof(char *)));
+	copyinstr((const userptr_t)(progname), kernelProgram, 128, &len);
+	
+	kprintf("program name: ");
+	kprintf(kernelProgram);
+       	kprintf("\n");
+
+	(void)args;
+
+	/*
+	// copy args and get argc
+	int argc = 0;
+	char **argPtrs;
+	char** kernelArgs = (char *)(kmalloc(sizeof(char *)));
+	while (arg != NULL){
+		copyin(*arg, *(argPtrs + argc), 128); 
+		arg += 1;
+		argc++;
+	}
+
+	for (int i = 0; i < argc; i++){
+		copyinstr(*(args+i), *(kernelArgs + i), 128, &len);
+	}*/
+
+        /* Open the file. */
+        result = vfs_open(kernelProgram, O_RDONLY, 0, &v);
+        if (result) {
+                return result;
+        }
+
+//        /* We should be a new process. */
+//        KASSERT(curproc_getas() == NULL);
+
+        struct addrspace *oldAS = curproc_getas();
+
+	/* Create a new address space. */
+        as = as_create();
+        if (as ==NULL) {
+                vfs_close(v);
+                return ENOMEM;
+        }
+
+        /* Switch to it and activate it. */
+        curproc_setas(as);
+        as_activate();
+
+        /* Load the executable. */
+        result = load_elf(v, &entrypoint);
+        if (result) {
+                /* p_addrspace will go away when curproc is destroyed */
+                vfs_close(v);
+                return result;
+        }
+
+        /* Done with the file now. */
+        vfs_close(v);
+
+        /* Define the user stack in the address space */
+        result = as_define_stack(as, &stackptr);
+        if (result) {
+                /* p_addrspace will go away when curproc is destroyed */
+                return result;
+        }
+
+	as_destroy(oldAS);
+
+        /* Warp to user mode. */
+        enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
+                          stackptr, entrypoint);
+
+        /* enter_new_process does not return. */
+        panic("enter_new_process returned\n");
+        return EINVAL;
+}
+
 #endif

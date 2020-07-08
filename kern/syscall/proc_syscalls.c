@@ -21,6 +21,7 @@ void sys__exit(int exitcode) {
 	   an unused variable */
 
 	DEBUG(DB_SYSCALL,"Syscall: _exit(%d)\n",exitcode);
+	DEBUG(DB_SYSCALL,"Syscall: pid(%d)\n", p->pid);
 
 	KASSERT(curproc->p_addrspace != NULL);
 	as_deactivate();
@@ -46,6 +47,7 @@ void sys__exit(int exitcode) {
 			proc_destroy((struct proc *)(array_get(curproc->children, i)));
 			array_remove(curproc->children, i);
 		}else{
+			((struct proc *)(array_get(curproc->children, i)))->parent = NULL;
 			i++;
 		}
 	}

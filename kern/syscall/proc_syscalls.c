@@ -200,7 +200,7 @@ pid_t sys_fork(struct trapframe *tf, pid_t *retval){
 
 
 #if OPT_A2
-int sys_execv(userptr_t progname, char** args){
+int sys_execv(userptr_t progname, userptr_t args){
   struct addrspace *as;
         struct vnode *v;
         vaddr_t entrypoint, stackptr;
@@ -221,23 +221,22 @@ int sys_execv(userptr_t progname, char** args){
 	int argc = 0;
 	// char** kernelArgs = (char **)(kmalloc(sizeof(char *)));
 	//char **index = (char **)(args);
-	kprintf("args: %p\n", (void *)(args));
 	
 	char **argPtr = (char **)(kmalloc(sizeof(char *)));
-	copyin((const_userptr_t)(args), argPtr, 4);
+	copyin(args, argPtr, 4);
 	while(*argPtr != NULL){
-		kprintf("argc: %d\n", argc);
 		argc++;
-		copyin((const_userptr_t)(args + argc), argPtr, 4);
-	}
+		copyin((const_userptr_t)(args + argc * sizeof(char**)), argPtr, 4);
+	}        
+	kprintf("argc: %d\n", argc);
 
 	char **kernelArgs = (char **)(kmalloc((argc + 1) * sizeof(char *)));
 	for (int i = 0; i < argc; i++){
 		size_t len = 0;
 		kernelArgs[i] = (char *)(kmalloc(128 * sizeof(char)));
-		copyinstr((const_userptr_t)(args[i]), (kernelArgs[i]), 128, &len); 
+		copyinstr(args + i * sizeof(char**), (kernelArgs[i]), 128, &len); 
 	}
-	// kernelArgs[argc] = NULL;
+	 kernelArgs[argc] = NULL;
 
 
   
@@ -246,9 +245,6 @@ int sys_execv(userptr_t progname, char** args){
         if (result) {
                 return result;
         }
-
-//        /* We should be a new process. */
-//        KASSERT(curproc_getas() == NULL);
 
         struct addrspace *oldAS = curproc_getas();
 
@@ -275,23 +271,18 @@ int sys_execv(userptr_t progname, char** args){
         vfs_close(v);
 
        // /* Define the user stack in the address space */
-       // result = as_define_stack(as, &stackptr);
-       // if (result) {
-       //         /* p_addrspace will go away when curproc is destroyed */
-       //         return result;
-      //  }
-	
-       	result = as_define_args(as, args, argc, &stackptr);
+       	result = as_define_args(as, kernelArgs, argc, &stackptr);
         if (result) {
                 /* p_addrspace will go away when curproc is destroyed */
                 return result;
         }
 
+	kfree(argPtr);
+	kfree(kernelArgs);
 	as_destroy(oldAS);
-
-	stackptr = stackptr + 8;
-        /* Warp to user mode. */
-        enter_new_process(argc /*argc*/, (userptr_t)(&as->argv) /*userspace addr of argv*/,
+        
+	/* Warp to user mode. */
+        enter_new_process(argc /*argc*/, (userptr_t)(as->argv) /*userspace addr of argv*/,
                           stackptr, entrypoint);
 
         /* enter_new_process does not return. */

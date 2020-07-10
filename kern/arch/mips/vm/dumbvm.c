@@ -356,29 +356,35 @@ int
 as_define_args(struct addrspace *as, char **args, int argc, vaddr_t *stackptr)
 {	KASSERT(as->as_stackpbase != 0);
 
-	*stackptr = USERSTACK;
-	char **argv = (char **)(kmalloc(sizeof(char *) * (argc + 1)));
+	vaddr_t temp = USERSTACK;
 	int arg_size = 0;
-	for (int i = argc - 1; i >= 0; i--){
-		*stackptr = *stackptr - strlen(args[i]) - 1;
+	for(int i = argc - 1; i >= 0; i--){
+		size_t len = 0;                	
 		arg_size += strlen(args[i]) + 1;
-		argv[i] = (char *)(* stackptr);
-		size_t len = 0;
-		copyoutstr(args[i], (userptr_t)(* stackptr), 128, &len);
+		copyoutstr(args[i], (userptr_t)(temp - arg_size), 128, &len);
 	}
-	argv[argc] = NULL;
 	arg_size = ROUNDUP(arg_size, 4);
-	*stackptr = USERSTACK - arg_size;
-	kprintf("args in as_stack: %s", *((char **)(*stackptr)));
-	for (int i = argc; i >= 0; i--){
-		*stackptr  = *stackptr - 4;
-		copyout(argv + i, (userptr_t)(* stackptr), 4);
+	temp = temp - arg_size;
+	char ** toInsert = (char **)(kmalloc(sizeof(char *)));
+	*toInsert = NULL;
+	arg_size = 0;
+	copyout(toInsert, (userptr_t)(temp - 4), 4);
+	temp = temp - 4;
+	for (int i = argc - 1; i >= 0; i--){
+		arg_size += strlen(args[i]) + 1;
+		*toInsert = (char *)(USERSTACK - arg_size);
+		copyout(toInsert, (userptr_t)(temp - 4), 4);
+		temp = temp - 4;
 	}
-	arg_size = ROUNDUP(arg_size + 4 * (argc + 1), 8);
-	*stackptr = *stackptr - arg_size;
-	kfree(argv);
-	as->argv = (char **)(*stackptr);
+	as->argv = (char **)(temp);
+	arg_size = ROUNDUP(arg_size, 4);
+	arg_size += (argc + 1) * 4;
+	arg_size = ROUNDUP(arg_size, 8);
+	*stackptr = USERSTACK - arg_size;
+	kfree(toInsert);
 	return 0;
+
+
 }
 #endif
 

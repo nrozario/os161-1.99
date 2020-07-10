@@ -52,7 +52,7 @@
  * Calls vfs_open on progname and thus may destroy it.
  */
 int
-runprogram(char *progname)
+runprogram(char *progname, int argc, char** args)
 {
 	struct addrspace *as;
 	struct vnode *v;
@@ -90,15 +90,18 @@ runprogram(char *progname)
 	/* Done with the file now. */
 	vfs_close(v);
 
-	/* Define the user stack in the address space */
-	result = as_define_stack(as, &stackptr);
-	if (result) {
+	if (argc == 0){
+		/* Define the user stack in the address space */
+		result = as_define_stack(as, &stackptr);
+	}else{
+		result = as_define_args(as, args, argc, &stackptr);
+	}if (result) {
 		/* p_addrspace will go away when curproc is destroyed */
 		return result;
 	}
 
 	/* Warp to user mode. */
-	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
+	enter_new_process(argc /*argc*/, (userptr_t)(as->argv) /*userspace addr of argv*/,
 			  stackptr, entrypoint);
 	
 	/* enter_new_process does not return. */

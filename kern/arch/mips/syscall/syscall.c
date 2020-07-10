@@ -137,6 +137,15 @@ syscall(struct trapframe *tf)
 		  err = sys_fork(childTF, (pid_t *)&retval);
 		  break;
 	  }
+	   
+   	case SYS_execv:
+          {
+                KASSERT(tf != NULL);
+         //         struct trapframe *childTF = (struct trapframe *)kmalloc(sizeof(struct trapframe));
+       //           memcpy(childTF, tf, sizeof(struct trapframe));
+                 err = sys_execv((userptr_t)tf->tf_a0,(userptr_t) tf->tf_a1);
+                  break;
+          }
 #endif // OPT_A2
 #endif // UW
  

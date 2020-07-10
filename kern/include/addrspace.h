@@ -55,6 +55,7 @@ struct addrspace {
   paddr_t as_pbase2;
   size_t as_npages2;
   paddr_t as_stackpbase;
+  char** argv;
 };
 
 /*
@@ -107,6 +108,7 @@ int               as_define_region(struct addrspace *as,
 int               as_prepare_load(struct addrspace *as);
 int               as_complete_load(struct addrspace *as);
 int               as_define_stack(struct addrspace *as, vaddr_t *initstackptr);
+int               as_define_args(struct addrspace *as, char **args, int argc, vaddr_t *stackptr);
 
 
 /*

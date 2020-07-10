@@ -97,6 +97,12 @@ runprogram(char *progname)
 		return result;
 	}
 
+//	 result = as_define_args(as, args);
+  //      if (result) {
+    //            /* p_addrspace will go away when curproc is destroyed */
+     //           return result;
+      //  }
+
 	/* Warp to user mode. */
 	enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
 			  stackptr, entrypoint);

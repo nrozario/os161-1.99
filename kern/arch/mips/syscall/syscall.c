@@ -141,9 +141,9 @@ syscall(struct trapframe *tf)
    	case SYS_execv:
           {
                 KASSERT(tf != NULL);
-                 // struct trapframe *childTF = (struct trapframe *)kmalloc(sizeof(struct trapframe));
-                 // memcpy(childTF, tf, sizeof(struct trapframe));
-                  err = sys_execv((const char *)tf->tf_a0, (char **)tf->tf_a1);
+                  struct trapframe *childTF = (struct trapframe *)kmalloc(sizeof(struct trapframe));
+                  memcpy(childTF, tf, sizeof(struct trapframe));
+                  err = sys_execv((userptr_t)childTF->tf_a0,(char **) childTF->tf_a1);
                   break;
           }
 #endif // OPT_A2

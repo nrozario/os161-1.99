@@ -37,7 +37,8 @@
 #include <mips/tlb.h>
 #include <addrspace.h>
 #include <vm.h>
-
+#include <copyinout.h>
+#include "opt-A2.h"
 /*
  * Dumb MIPS-only "VM system" that is intended to only be just barely
  * enough to struggle off the ground.
@@ -350,6 +351,36 @@ as_define_stack(struct addrspace *as, vaddr_t *stackptr)
 	*stackptr = USERSTACK;
 	return 0;
 }
+#if OPT_A2
+int
+as_define_args(struct addrspace *as, char **args, int argc, vaddr_t *stackptr)
+{	KASSERT(as->as_stackpbase != 0);
+
+	*stackptr = USERSTACK;
+	char **argv = (char **)(kmalloc(sizeof(char *) * (argc + 1)));
+	int arg_size = 0;
+	for (int i = argc - 1; i >= 0; i--){
+		*stackptr = *stackptr - strlen(args[i]) - 1;
+		arg_size += strlen(args[i]) + 1;
+		argv[i] = (char *)(* stackptr);
+		size_t len = 0;
+		copyoutstr(args[i], (userptr_t)(* stackptr), 128, &len);
+	}
+	argv[argc] = NULL;
+	arg_size = ROUNDUP(arg_size, 4);
+	*stackptr = USERSTACK - arg_size;
+	kprintf("args in as_stack: %s", *((char **)(*stackptr)));
+	for (int i = argc; i >= 0; i--){
+		*stackptr  = *stackptr - 4;
+		copyout(argv + i, (userptr_t)(* stackptr), 4);
+	}
+	arg_size = ROUNDUP(arg_size + 4 * (argc + 1), 8);
+	*stackptr = *stackptr - arg_size;
+	kfree(argv);
+	as->argv = (char **)(*stackptr);
+	return 0;
+}
+#endif
 
 int
 as_copy(struct addrspace *old, struct addrspace **ret)

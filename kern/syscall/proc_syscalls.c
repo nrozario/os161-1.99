@@ -200,7 +200,7 @@ pid_t sys_fork(struct trapframe *tf, pid_t *retval){
 
 
 #if OPT_A2
-int sys_execv(const char *progname, char**args){
+int sys_execv(userptr_t progname, char** args){
   struct addrspace *as;
         struct vnode *v;
         vaddr_t entrypoint, stackptr;
@@ -209,31 +209,39 @@ int sys_execv(const char *progname, char**args){
 	size_t len = 0;
     
 	// copy program path
-	char *kernelProgram = (char *)(kmalloc(sizeof(char *)));
-	copyinstr((const userptr_t)(progname), kernelProgram, 128, &len);
+	char *kernelProgram = (char *)(kmalloc(128 * sizeof(char)));
+	copyinstr(progname, kernelProgram, 128, &len);
 	
-	kprintf("program name: ");
-	kprintf(kernelProgram);
-       	kprintf("\n");
+	// kprintf("program name: ");
+	// kprintf(kernelProgram);
+       	// kprintf("\n");
 
-	(void)args;
-
-	/*
+	
 	// copy args and get argc
 	int argc = 0;
-	char **argPtrs;
-	char** kernelArgs = (char *)(kmalloc(sizeof(char *)));
-	while (arg != NULL){
-		copyin(*arg, *(argPtrs + argc), 128); 
-		arg += 1;
+	// char** kernelArgs = (char **)(kmalloc(sizeof(char *)));
+	//char **index = (char **)(args);
+	kprintf("args: %p\n", (void *)(args));
+	
+	char **argPtr = (char **)(kmalloc(sizeof(char *)));
+	copyin((const_userptr_t)(args), argPtr, 4);
+	while(*argPtr != NULL){
+		kprintf("argc: %d\n", argc);
 		argc++;
+		copyin((const_userptr_t)(args + argc), argPtr, 4);
 	}
 
+	char **kernelArgs = (char **)(kmalloc((argc + 1) * sizeof(char *)));
 	for (int i = 0; i < argc; i++){
-		copyinstr(*(args+i), *(kernelArgs + i), 128, &len);
-	}*/
+		size_t len = 0;
+		kernelArgs[i] = (char *)(kmalloc(128 * sizeof(char)));
+		copyinstr((const_userptr_t)(args[i]), (kernelArgs[i]), 128, &len); 
+	}
+	// kernelArgs[argc] = NULL;
 
-        /* Open the file. */
+
+  
+	/* Open the file. */
         result = vfs_open(kernelProgram, O_RDONLY, 0, &v);
         if (result) {
                 return result;
@@ -266,8 +274,14 @@ int sys_execv(const char *progname, char**args){
         /* Done with the file now. */
         vfs_close(v);
 
-        /* Define the user stack in the address space */
-        result = as_define_stack(as, &stackptr);
+       // /* Define the user stack in the address space */
+       // result = as_define_stack(as, &stackptr);
+       // if (result) {
+       //         /* p_addrspace will go away when curproc is destroyed */
+       //         return result;
+      //  }
+	
+       	result = as_define_args(as, args, argc, &stackptr);
         if (result) {
                 /* p_addrspace will go away when curproc is destroyed */
                 return result;
@@ -275,8 +289,9 @@ int sys_execv(const char *progname, char**args){
 
 	as_destroy(oldAS);
 
+	stackptr = stackptr + 8;
         /* Warp to user mode. */
-        enter_new_process(0 /*argc*/, NULL /*userspace addr of argv*/,
+        enter_new_process(argc /*argc*/, (userptr_t)(&as->argv) /*userspace addr of argv*/,
                           stackptr, entrypoint);
 
         /* enter_new_process does not return. */

@@ -229,13 +229,13 @@ int sys_execv(userptr_t progname, userptr_t args){
 		argc++;
 		copyin((const_userptr_t)(args + argc * sizeof(char**)), argPtr, 4);
 	}        
-	kprintf("argc: %d\n", argc);
 
 	char **kernelArgs = (char **)(kmalloc((argc + 1) * sizeof(char *)));
 	for (int i = 0; i < argc; i++){
 		size_t len = 0;
+		copyin((const_userptr_t)(args + i * sizeof(char**)), argPtr, 4);
 		kernelArgs[i] = (char *)(kmalloc(128 * sizeof(char)));
-		copyinstr(args + i * sizeof(char**), (kernelArgs[i]), 128, &len); 
+		copyinstr((const_userptr_t)(*argPtr), (kernelArgs[i]), 128, &len); 
 	}
 	 kernelArgs[argc] = NULL;
 

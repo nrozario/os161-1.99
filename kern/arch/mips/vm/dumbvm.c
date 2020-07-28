@@ -53,9 +53,36 @@
  */
 static struct spinlock stealmem_lock = SPINLOCK_INITIALIZER;
 
+#if OPT_A3
+static int *coremap;
+static int numberOfPages;
+static bool isCoremapReady = false;
+static vaddr_t start;
+#endif
+
 void
 vm_bootstrap(void)
 {
+#if OPT_A3
+	paddr_t lo, hi;
+	ram_getsize(&lo, &hi);
+	lo = ROUNDUP(lo, PAGE_SIZE);
+	KASSERT((lo % PAGE_SIZE) == 0);
+	int n = (hi - lo) / PAGE_SIZE;
+	hi = lo + n * PAGE_SIZE;
+	KASSERT((hi % PAGE_SIZE) == 0);
+	int coremapSize = n * sizeof(int);
+	coremapSize = ROUNDUP(coremapSize, PAGE_SIZE);
+	start = lo;
+	coremap = (int *)(PADDR_TO_KVADDR(start));
+	lo += coremapSize;
+	KASSERT((lo % PAGE_SIZE) == 0);
+	numberOfPages = (hi - lo) / PAGE_SIZE;
+	for (int i = 0; i < numberOfPages; i++){
+		coremap[i] = 0;
+	}
+	isCoremapReady = true;
+#endif
 	/* Do nothing. */
 }
 
@@ -64,12 +91,40 @@ paddr_t
 getppages(unsigned long npages)
 {
 	paddr_t addr;
-
+#if OPT_A3
+	if (isCoremapReady){
+		addr = 0;
+	int i = 0;
+	while ((int)(i + npages) < numberOfPages){
+		if (coremap[i] == 0){
+			bool complete = true;
+			for (unsigned j = 0; j < npages; j++){
+				if (coremap[i + j] != 0){
+					i += j + 1;
+					complete = false;
+				}
+			}
+			if (complete){
+				for (unsigned j = 0; j < npages; j++){
+					coremap[i + j] = npages - j;
+				}
+				addr = start + i * PAGE_SIZE;
+				break;
+			}
+		}else{
+			i++;
+		}
+	}
+	}else{
+#endif
 	spinlock_acquire(&stealmem_lock);
 
 	addr = ram_stealmem(npages);
 	
 	spinlock_release(&stealmem_lock);
+#if OPT_A3
+	}
+#endif
 	return addr;
 }
 
@@ -82,16 +137,35 @@ alloc_kpages(int npages)
 	if (pa==0) {
 		return 0;
 	}
+	vaddr_t toReturn = PADDR_TO_KVADDR(pa);
+	(void)toReturn;
 	return PADDR_TO_KVADDR(pa);
 }
 
 void 
 free_kpages(vaddr_t addr)
 {
+#if OPT_A3
+	if (isCoremapReady){
+		vaddr_t vStart = PADDR_TO_KVADDR(start);
+		(void)vStart;
+		int i = (addr - PADDR_TO_KVADDR(start)) / PAGE_SIZE;
+		KASSERT(i < numberOfPages);
+		int n = coremap[i];
+		KASSERT((i + n) < numberOfPages);
+		for (int j = 0; j < n; j++){
+			coremap[i + j] = 0;
+		}
+	}else{
+#endif
 	/* nothing - leak the memory. */
 
 	(void)addr;
+#if OPT_A3
+	}
+#endif
 }
+
 
 void
 vm_tlbshootdown_all(void)
@@ -252,7 +326,13 @@ as_create(void)
 void
 as_destroy(struct addrspace *as)
 {
+#if OPT_A3
+	free_kpages(PADDR_TO_KVADDR(as->as_pbase1));
+	free_kpages(PADDR_TO_KVADDR(as->as_pbase2));
+	free_kpages(PADDR_TO_KVADDR(as->as_stackpbase));
+#else
 	kfree(as);
+#endif
 }
 
 void

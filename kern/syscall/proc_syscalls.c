@@ -16,7 +16,7 @@
 /* this implementation of sys__exit does not do anything with the exit code */
 /* this needs to be fixed to get exit() and waitpid() working properly */
 
-void sys__exit(int exitcode) {
+void sys__exit(int exitcode, bool isExit) {
 	struct addrspace *as;
 	struct proc *p = curproc;
 	/* for now, just include this to keep the compiler from complaining about
@@ -58,8 +58,11 @@ void sys__exit(int exitcode) {
 		destroy = true;
 	}else{
 		curproc->exited = true;
-		curproc->exitstatus = _MKWAIT_EXIT(exitcode);
-		cv_signal(curproc->parentSignal, curproc->info_lock); // signal to parent that child has exited
+		if (isExit){
+			curproc->exitstatus = _MKWAIT_EXIT(exitcode);
+		}else{
+			curproc->exitstatus = _MKWAIT_SIG(exitcode);
+		}cv_signal(curproc->parentSignal, curproc->info_lock); // signal to parent that child has exited
 	}
 
 	lock_release(curproc->info_lock);	

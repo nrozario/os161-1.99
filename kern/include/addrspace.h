@@ -36,6 +36,8 @@
 
 
 #include <vm.h>
+#include "opt-A2.h"
+#include "opt-A3.h"
 
 struct vnode;
 
@@ -47,16 +49,31 @@ struct vnode;
  * You write this.
  */
 
+#if OPT_A3
+struct pt_entry{
+        paddr_t frame;
+        bool isValid;
+};
+#endif
+
 struct addrspace {
-  vaddr_t as_vbase1;
+#if OPT_A3
+  struct pt_entry *as_pt1;
+  struct pt_entry *as_pt2;
+  struct pt_entry *as_stackpt;
+  bool isLoadComplete;
+#else
   paddr_t as_pbase1;
+  paddr_t as_pbase2;
+  paddr_t as_stackpbase;
+#endif
   size_t as_npages1;
   vaddr_t as_vbase2;
-  paddr_t as_pbase2;
   size_t as_npages2;
-  paddr_t as_stackpbase;
+  vaddr_t as_vbase1;
+#if OPT_A2
   char** argv;
-  bool isLoadComplete;
+#endif
 };
 
 /*
@@ -109,8 +126,9 @@ int               as_define_region(struct addrspace *as,
 int               as_prepare_load(struct addrspace *as);
 int               as_complete_load(struct addrspace *as);
 int               as_define_stack(struct addrspace *as, vaddr_t *initstackptr);
+#if OPT_A2
 int               as_define_args(struct addrspace *as, char **args, int argc, vaddr_t *stackptr);
-
+#endif
 
 /*
  * Functions in loadelf.c

@@ -377,9 +377,10 @@ as_destroy(struct addrspace *as)
 			free_kpages(PADDR_TO_KVADDR(as->as_stackpt[i].frame));
 		}
 	}
-	//	free_kpages(PADDR_TO_KVADDR(as->as_pbase1));
-	//	free_kpages(PADDR_TO_KVADDR(as->as_pbase2));
-	//	free_kpages(PADDR_TO_KVADDR(as->as_stackpbase));
+	kfree(as->as_pt1);
+	kfree(as->as_pt2);
+	kfree(as->as_stackpt);
+	kfree(as);
 #else
 	kfree(as);
 #endif
@@ -487,7 +488,7 @@ as_prepare_load(struct addrspace *as)
 #if OPT_A3
 	for (unsigned i = 0; i < as->as_npages1; i++){
 		as->as_pt1[i].frame = getppages(1);
-		as->as_pt1[i].isValid = (as->as_pt1[i].frame == 0);
+		as->as_pt1[i].isValid = !(as->as_pt1[i].frame == 0);
 	}
 #else
 	as->as_pbase1 = getppages(as->as_npages1);	
@@ -501,7 +502,7 @@ as_prepare_load(struct addrspace *as)
 #if OPT_A3
 	for (unsigned i = 0; i < as->as_npages2; i++){
 		as->as_pt2[i].frame = getppages(1);
-		as->as_pt2[i].isValid = (as->as_pt2[i].frame == 0);
+		as->as_pt2[i].isValid = !(as->as_pt2[i].frame == 0);
 	}
 #else
 	as->as_pbase2 = getppages(as->as_npages2);
@@ -518,7 +519,7 @@ as_prepare_load(struct addrspace *as)
 #if OPT_A3
 	for (int i = 0; i < DUMBVM_STACKPAGES; i++){
 		as->as_stackpt[i].frame = getppages(1);
-		as->as_stackpt[i].isValid = (as->as_stackpt[i].frame == 0);
+		as->as_stackpt[i].isValid = !(as->as_stackpt[i].frame == 0);
 	}
 #else
 	as->as_stackpbase = getppages(DUMBVM_STACKPAGES);
@@ -629,21 +630,21 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 
 	for (unsigned i = 0; i < new->as_npages1; i++){
 		new->as_pt1[i].frame = getppages(1);
-		new->as_pt1[i].isValid = (new->as_pt1[i].frame == 0);
+		new->as_pt1[i].isValid = !(new->as_pt1[i].frame == 0);
 		memcpy((void *)PADDR_TO_KVADDR(new->as_pt1[i].frame),
 				(const void *)PADDR_TO_KVADDR(old->as_pt1[i].frame),
 				PAGE_SIZE);
 	}	 
 	for (unsigned i = 0; i < new->as_npages2; i++){
 		new->as_pt2[i].frame = getppages(1);
-		new->as_pt2[i].isValid = (new->as_pt2[i].frame == 0);
+		new->as_pt2[i].isValid = !(new->as_pt2[i].frame == 0);
 		memcpy((void *)PADDR_TO_KVADDR(new->as_pt2[i].frame),
 				(const void *)PADDR_TO_KVADDR(old->as_pt2[i].frame),
 				PAGE_SIZE);
 	}
 	for (int i = 0; i < DUMBVM_STACKPAGES; i++){
 		new->as_stackpt[i].frame = getppages(1);
-		new->as_stackpt[i].isValid = (new->as_stackpt[i].frame == 0);
+		new->as_stackpt[i].isValid = !(new->as_stackpt[i].frame == 0);
 		memcpy((void *)PADDR_TO_KVADDR(new->as_stackpt[i].frame),
 				(const void *)PADDR_TO_KVADDR(old->as_stackpt[i].frame),
 				PAGE_SIZE);

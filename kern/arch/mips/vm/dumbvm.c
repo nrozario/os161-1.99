@@ -68,7 +68,7 @@ vm_bootstrap(void)
 	ram_getsize(&lo, &hi);
 	lo = ROUNDUP(lo, PAGE_SIZE);
 	KASSERT((lo % PAGE_SIZE) == 0);
-	int n = (hi - lo) / PAGE_SIZE;
+	int n = (hi - lo) / PAGE_SIZE; // get number of free pages
 	hi = lo + n * PAGE_SIZE;
 	KASSERT((hi % PAGE_SIZE) == 0);
 	int coremapSize = n * sizeof(int);
@@ -78,6 +78,7 @@ vm_bootstrap(void)
 	lo += coremapSize;
 	KASSERT((lo % PAGE_SIZE) == 0);
 	numberOfPages = (hi - lo) / PAGE_SIZE;
+	// set each page in coremap as available
 	for (int i = 0; i < numberOfPages; i++){
 		coremap[i] = 0;
 	}
@@ -98,16 +99,20 @@ getppages(unsigned long npages)
 		while ((int)(i + npages) < numberOfPages){
 			if (coremap[i] == 0){
 				bool complete = true;
+				// check if there's a contiguous block available
 				for (unsigned j = 0; j < npages; j++){
 					if (coremap[i + j] != 0){
 						i += j + 1;
 						complete = false;
 					}
 				}
+				// if available, set block of npages pages to no longer free
 				if (complete){
 					for (unsigned j = 0; j < npages; j++){
+						// each page in block stores how many pages in block are left (including self)
 						coremap[i + j] = npages - j;
 					}
+					// return address of first page in contiguous block
 					addr = start + i * PAGE_SIZE;
 					break;
 				}
@@ -118,9 +123,7 @@ getppages(unsigned long npages)
 	}else{
 #endif
 		spinlock_acquire(&stealmem_lock);
-
 		addr = ram_stealmem(npages);
-
 		spinlock_release(&stealmem_lock);
 #if OPT_A3
 	}
@@ -137,8 +140,6 @@ alloc_kpages(int npages)
 	if (pa==0) {
 		return 0;
 	}
-	vaddr_t toReturn = PADDR_TO_KVADDR(pa);
-	(void)toReturn;
 	return PADDR_TO_KVADDR(pa);
 }
 
@@ -147,11 +148,9 @@ free_kpages(vaddr_t addr)
 {
 #if OPT_A3
 	if (isCoremapReady){
-		vaddr_t vStart = PADDR_TO_KVADDR(start);
-		(void)vStart;
 		int i = (addr - PADDR_TO_KVADDR(start)) / PAGE_SIZE;
 		KASSERT(i < numberOfPages);
-		int n = coremap[i];
+		int n = coremap[i]; // first page in block in coremap stores how many pages in block
 		KASSERT((i + n) < numberOfPages);
 		for (int j = 0; j < n; j++){
 			coremap[i + j] = 0;
@@ -159,7 +158,6 @@ free_kpages(vaddr_t addr)
 	}else{
 #endif
 		/* nothing - leak the memory. */
-
 		(void)addr;
 #if OPT_A3
 	}
@@ -265,9 +263,9 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 	stacktop = USERSTACK;
 
 #if OPT_A3        
-	bool isCodeSegment = false;
+	bool isCodeSegment = false; 
 #endif
-	if (faultaddress >= vbase1 && faultaddress < vtop1) {
+	if (faultaddress >= vbase1 && faultaddress < vtop1) { // TEXT SEGMENT
 #if OPT_A3
 		isCodeSegment = true;
 		int i = (faultaddress - vbase1) / PAGE_SIZE;
@@ -276,7 +274,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		paddr = (faultaddress - vbase1) + as->as_pbase1;
 #endif
 	}
-	else if (faultaddress >= vbase2 && faultaddress < vtop2) {
+	else if (faultaddress >= vbase2 && faultaddress < vtop2) { // DATA SEGMENT
 #if OPT_A3
 		int i = (faultaddress - vbase2) / PAGE_SIZE;
 		paddr = as->as_pt2[i].frame;
@@ -284,7 +282,7 @@ vm_fault(int faulttype, vaddr_t faultaddress)
 		paddr = (faultaddress - vbase2) + as->as_pbase2;
 #endif
 	}
-	else if (faultaddress >= stackbase && faultaddress < stacktop) {
+	else if (faultaddress >= stackbase && faultaddress < stacktop) { // STACK SEGMENT
 #if OPT_A3
 		int i = (faultaddress - stackbase) / PAGE_SIZE;
 		paddr = as->as_stackpt[i].frame;
@@ -343,7 +341,7 @@ as_create(void)
 	}
 #if OPT_A3
 	as->isLoadComplete = false;
-	as->as_stackpt = NULL;
+	as->as_stackpt = NULL; // A3 uses page tables
 	as->as_pt1 = NULL;
 	as->as_pt2 = NULL;
 #else
@@ -362,6 +360,7 @@ as_create(void)
 as_destroy(struct addrspace *as)
 {
 #if OPT_A3
+	// empty page tables
 	for (unsigned i = 0; i < as->as_npages1; i++){
 		if (as->as_pt1[i].isValid){
 			free_kpages(PADDR_TO_KVADDR(as->as_pt1[i].frame));
@@ -377,6 +376,7 @@ as_destroy(struct addrspace *as)
 			free_kpages(PADDR_TO_KVADDR(as->as_stackpt[i].frame));
 		}
 	}
+	// free page tables
 	kfree(as->as_pt1);
 	kfree(as->as_pt2);
 	kfree(as->as_stackpt);
@@ -439,6 +439,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	if (as->as_vbase1 == 0) {
 		as->as_vbase1 = vaddr;
 #if OPT_A3
+		// alloc page table
 		as->as_pt1 = (struct pt_entry *)(kmalloc(npages * sizeof(struct pt_entry)));
 		if (as->as_pt1 == NULL){
 			return ENOMEM;
@@ -451,6 +452,7 @@ as_define_region(struct addrspace *as, vaddr_t vaddr, size_t sz,
 	if (as->as_vbase2 == 0) {
 		as->as_vbase2 = vaddr;		
 #if OPT_A3
+		// alloc page table
 		as->as_pt2 = (struct pt_entry *)(kmalloc(npages * sizeof(struct pt_entry)));
 		if (as->as_pt2 == NULL){
 			return ENOMEM;
@@ -621,13 +623,14 @@ as_copy(struct addrspace *old, struct addrspace **ret)
 	new->as_npages2 = old->as_npages2;
 
 #if OPT_A3
+	// alloc page tables
 	new->as_pt1 = (struct pt_entry *)(kmalloc(new->as_npages1 * sizeof(struct pt_entry)));
 	new->as_pt2 = (struct pt_entry *)(kmalloc(new->as_npages2 * sizeof(struct pt_entry)));
 	new->as_stackpt = (struct pt_entry *)(kmalloc(DUMBVM_STACKPAGES * sizeof(struct pt_entry)));
 	if (new->as_pt1 == NULL || new->as_pt2 == NULL || new->as_stackpt == NULL){
 		return ENOMEM;
 	}
-
+	// get frames for page tables and copy frame data from old address space 
 	for (unsigned i = 0; i < new->as_npages1; i++){
 		new->as_pt1[i].frame = getppages(1);
 		new->as_pt1[i].isValid = !(new->as_pt1[i].frame == 0);
